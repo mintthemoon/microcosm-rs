@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response};
-use crate::gojira::utility::Validate;
-use crate::gojira::{Res, Error};
+use crate::utility::Validate;
+use crate::{Res, Error};
 
 #[cw_serde]
 pub struct Claim {
