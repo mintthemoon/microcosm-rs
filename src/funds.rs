@@ -124,6 +124,15 @@ impl Validate<Claim> for ClaimMsg {
     }
 }
 
+impl From<Claim> for ClaimMsg {
+    fn from(claim: Claim) -> ClaimMsg {
+        ClaimMsg {
+            owner: claim.owner.to_string(),
+            bps: claim.bps,
+        }
+    }
+}
+
 #[cw_serde]
 pub struct SplitMsg {
     pub claims: Vec<ClaimMsg>,
@@ -134,5 +143,13 @@ impl Validate<Split> for SplitMsg {
         Ok(Split {
             claims: self.claims.validate(deps)?,
         })
+    }
+}
+
+impl From<Split> for SplitMsg {
+    fn from(split: Split) -> SplitMsg {
+        SplitMsg {
+            claims: split.claims.into_iter().map(Into::into).collect(),
+        }
     }
 }
