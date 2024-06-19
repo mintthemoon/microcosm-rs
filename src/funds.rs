@@ -89,7 +89,7 @@ impl MessageFunds for MessageInfo {
     }
 
     fn defund(&self) -> Res {
-        if self.funds.len() == 0 {
+        if self.funds.len() != 0 {
             return Err(Error::FundsNotRequired {});
         }
         Ok(())
