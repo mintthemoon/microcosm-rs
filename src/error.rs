@@ -14,6 +14,9 @@ pub enum Error {
     #[error("This function is disabled")]
     Disabled {},
 
+    #[error("This {0} has expired")]
+    Expired(&'static str),
+
     #[error("Insufficient funds provided")]
     InsufficientFunds {},
 
