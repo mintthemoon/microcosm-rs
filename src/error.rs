@@ -26,9 +26,11 @@ pub enum Error {
     #[error("This action does not require funds")]
     FundsNotRequired {},
 
+    #[error("Provided input was invalid")]
+    Input {},
+
     #[error("Unexpected error occurred")]
     Unexpected {},
-
 }
 
 struct AnyError<T: std::error::Error + 'static>(T);
