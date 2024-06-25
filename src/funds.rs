@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response};
+use cosmwasm_std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response, StdError};
 use crate::utility::Validate;
-use crate::{Res, IntoRes, Error};
+use crate::{Res, Error};
 
 #[cw_serde]
 pub struct Claim {
@@ -15,7 +15,7 @@ impl Claim {
             .map(|coin| Coin::new(coin.amount.u128() * self.bps as u128 / 10000u128, &coin.denom))
             .collect::<Vec<Coin>>()
             .try_into()
-            .res()
+            .map_err(|e| StdError::from(e).into())
     }
 }
 
