@@ -13,6 +13,7 @@ pub enum Range<T: Serialize + FromStr> {
 }
 
 // ======= MESSAGES =======
+#[cw_serde]
 pub enum RangeMsg {
     Inclusive { low: String, high: String },
 }
