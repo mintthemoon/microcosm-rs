@@ -1,4 +1,4 @@
-use cosmwasm_std::{CoinsError, StdError};
+use cosmwasm_std::StdError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -6,7 +6,7 @@ pub enum Error {
     Generic { msg: String },
 
     #[error(transparent)]
-    Std(#[from] StdError),
+    Std(StdError),
 
     #[error("User cannot perform this action")]
     Unauthorized {},
@@ -30,20 +30,20 @@ pub enum Error {
     Unexpected {},
 }
 
-impl From<CoinsError> for Error {
-    fn from(err: CoinsError) -> Error {
+impl <T: Into<StdError>> From<T> for Error {
+    fn from(err: T) -> Error {
         Error::Std(err.into())
     }
 }
 
-impl Into<cosmwasm_std::StdError> for Error {
-    fn into(self) -> cosmwasm_std::StdError {
+impl Error {
+    #![allow(dead_code)]
+    fn std(self) -> StdError {
         match self {
             Error::Std(err) => err,
-            _ => cosmwasm_std::StdError::GenericErr { msg: self.to_string() },
+            _ => StdError::GenericErr { msg: self.to_string() },
         }
     }
-
 }
 
 pub type Res<T = (), E = Error> = Result<T, E>;
