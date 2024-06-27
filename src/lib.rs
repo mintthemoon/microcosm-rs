@@ -1,10 +1,9 @@
-mod error;
+pub mod error;
 pub mod funds;
 pub mod utility;
 pub mod math;
 pub mod page;
-
-pub use crate::error::{Res, ToRes, Error};
+pub mod msg;
 
 pub use cosmwasm_schema as schema;
 pub use cosmwasm_std as std;

@@ -1,29 +1,30 @@
-use crate::std::Uint128;
-use crate::schema::cw_serde;
-use crate::{Res, Error};
+use crate::{
+    schema::cw_serde,
+    std::Uint128,
+    error::{Res, Error},
+};
 
 #[cw_serde]
-pub struct PageMsg<T> {
-    pub page: Uint128,
+pub struct PageMsg {
+    pub index: Uint128,
     pub end: Uint128,
-    pub items: Vec<T>,
 }
 
 #[cw_serde]
 pub struct PageQuery {
-    pub page: Uint128,
+    pub index: Uint128,
     pub limit: Option<u32>,
 }
 
-pub struct PageQuerier {
+pub struct PageLimits {
     pub default_limit: u32,
     pub max_limit: u32,
     pub max_items: Uint128,
 }
 
-impl PageQuerier {
+impl PageLimits {
     pub fn new(default_limit: u32, max_limit: u32, max_items: Uint128) -> Self {
-        PageQuerier {
+        PageLimits {
             default_limit,
             max_limit,
             max_items,
@@ -35,7 +36,7 @@ impl PageQuerier {
         if limit > self.max_limit {
             return Err(Error::Input {});
         }
-        let start = page.page * Uint128::new(limit as u128);
+        let start = page.index * Uint128::new(limit as u128);
         if start >= self.max_items {
             Err(Error::Input {})
         } else {
@@ -48,7 +49,7 @@ impl PageQuerier {
         if limit > self.max_limit {
             return Err(Error::Input {});
         }
-        let end = page.page * Uint128::new((limit + 1) as u128);
+        let end = page.index * Uint128::new((limit + 1) as u128);
         Ok(if end > self.max_items {
             self.max_items
         } else {

@@ -1,7 +1,9 @@
-use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response, StdError};
-use crate::utility::Validate;
-use crate::{Res, Error};
+use crate::{
+    schema::cw_serde,
+    std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response, StdError},
+    error::{Error, Res},
+    utility::Validate,
+};
 
 #[cw_serde]
 pub struct Claim {
@@ -11,8 +13,14 @@ pub struct Claim {
 
 impl Claim {
     pub fn split(&self, funds: &Coins) -> Res<Coins> {
-        funds.into_iter()
-            .map(|coin| Coin::new(coin.amount.u128() * self.bps as u128 / 10000u128, &coin.denom))
+        funds
+            .into_iter()
+            .map(|coin| {
+                Coin::new(
+                    coin.amount.u128() * self.bps as u128 / 10000u128,
+                    &coin.denom,
+                )
+            })
             .collect::<Vec<Coin>>()
             .try_into()
             .map_err(|e| StdError::from(e).into())
@@ -26,7 +34,9 @@ pub struct Split {
 
 impl Split {
     pub fn split(&self, funds: &Coins) -> Res<Vec<BankMsg>> {
-        let mut amounts = self.claims.iter()
+        let mut amounts = self
+            .claims
+            .iter()
             .map(|claim| {
                 let coins = claim.split(&funds);
                 coins.map(|c| (&claim.owner, c))
@@ -41,19 +51,17 @@ impl Split {
         let mut remainders = funds.clone();
         for total in totals {
             remainders.sub(total)?;
-        };
+        }
         for remainder in remainders {
             amounts[0].1.add(remainder)?;
-        };
-        Ok(amounts.iter()
-            .map(|(owner, coins)| {
-                BankMsg::Send {
-                    to_address: owner.to_string(),
-                    amount: coins.to_vec(),
-                }
+        }
+        Ok(amounts
+            .iter()
+            .map(|(owner, coins)| BankMsg::Send {
+                to_address: owner.to_string(),
+                amount: coins.to_vec(),
             })
-            .collect()
-        )
+            .collect())
     }
 }
 

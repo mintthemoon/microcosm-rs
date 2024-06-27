@@ -1,5 +1,4 @@
-use cosmwasm_std::{Addr, Deps};
-use crate::{Res, Error};
+use crate::{std::{Addr, Deps}, error::{Res, Error}};
 
 pub trait Authorize {
     fn authorize(&self, addr: &Addr) -> Res;
