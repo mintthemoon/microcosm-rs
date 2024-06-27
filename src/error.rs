@@ -36,6 +36,16 @@ impl From<CoinsError> for Error {
     }
 }
 
+impl Into<cosmwasm_std::StdError> for Error {
+    fn into(self) -> cosmwasm_std::StdError {
+        match self {
+            Error::Std(err) => err,
+            _ => cosmwasm_std::StdError::GenericErr { msg: self.to_string() },
+        }
+    }
+
+}
+
 pub type Res<T = (), E = Error> = Result<T, E>;
 
 pub trait ToRes<T, E = Error> {
