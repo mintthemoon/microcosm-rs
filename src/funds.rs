@@ -33,6 +33,20 @@ pub struct Split {
 }
 
 impl Split {
+    pub fn with_remainder_to(&self, addr: &Addr) -> Res<Self> {
+        let total_bps: u32 = self.claims.iter().map(|c| c.bps).sum();
+        if total_bps > 10000 {
+            return Err(Error::Generic("Total funds claims exceed 100%".to_string()));
+        }
+        let claim = Claim {
+            owner: addr.clone(),
+            bps: 10000 - total_bps,
+        };
+        let mut claims = self.claims.clone();
+        claims.push(claim);
+        Ok(Split { claims })
+    }
+
     pub fn split(&self, funds: &Coins) -> Res<Vec<BankMsg>> {
         let mut amounts = self
             .claims
