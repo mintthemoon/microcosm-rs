@@ -2,32 +2,32 @@ use cosmwasm_std::StdError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Internal error: {msg:?}")]
-    Generic { msg: String },
+    #[error("Internal error: {0}")]
+    Generic(String),
 
     #[error(transparent)]
     Std(StdError),
 
     #[error("User cannot perform this action")]
-    Unauthorized {},
+    Unauthorized,
 
     #[error("This function is disabled")]
-    Disabled {},
+    Disabled,
 
     #[error("This {0} has expired")]
     Expired(&'static str),
 
     #[error("Insufficient funds provided")]
-    InsufficientFunds {},
+    InsufficientFunds,
 
     #[error("This action does not require funds")]
-    FundsNotRequired {},
+    FundsNotRequired,
 
     #[error("Provided input was invalid")]
-    Input {},
+    Input,
 
     #[error("Unexpected error occurred")]
-    Unexpected {},
+    Unexpected,
 }
 
 impl <T: Into<StdError>> From<T> for Error {
@@ -54,6 +54,6 @@ pub trait ToRes<T, E = Error> {
 
 impl <T, E: Into<anyhow::Error>> ToRes<T> for Result<T, E> {
     fn res(self) -> Res<T> {
-        self.map_err(|e| Error::Generic { msg: e.into().to_string() })
+        self.map_err(|e| Error::Generic(e.into().to_string()))
     }
 }
