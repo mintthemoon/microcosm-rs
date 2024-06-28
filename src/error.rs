@@ -57,3 +57,13 @@ impl <T, E: Into<anyhow::Error>> ToRes<T> for Result<T, E> {
         self.map_err(|e| Error::Generic(e.into().to_string()))
     }
 }
+
+pub trait FromRes<T> {
+    fn std(self) -> Res<T, StdError>;
+}
+
+impl <T> FromRes<T> for Res<T> {
+    fn std(self) -> Res<T, StdError> {
+        self.map_err(Error::std)
+    }
+}

@@ -551,7 +551,7 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 
 [[package]]
 name = "microcosm"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "cosmwasm-schema 1.5.5",
