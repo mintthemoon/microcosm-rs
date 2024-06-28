@@ -6,7 +6,7 @@ pub mod page;
 pub mod msg;
 
 pub mod schema {
-    pub use macrocosm::cw_serde;
+    pub use macrocosm::{cw_serde, QueryResponses};
     pub use cosmwasm_schema::{
         generate_api,
         write_api,
@@ -16,7 +16,7 @@ pub mod schema {
         remove_schemas,
         Api,
         IntegrityError,
-        QueryResponses,
+        schema_for,
     };
 }
 pub use cosmwasm_std as std;

@@ -554,12 +554,12 @@ name = "macrocosm"
 version = "0.1.0"
 dependencies = [
  "quote",
- "syn 2.0.68",
+ "syn 1.0.109",
 ]
 
 [[package]]
 name = "microcosm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "cosmwasm-schema 1.5.5",
