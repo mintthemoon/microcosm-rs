@@ -1,5 +1,5 @@
 use crate::{
-    schema::cw_serde,
+    cosmwasm_schema::cw_serde,
     std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response, StdError},
     error::{Error, Res},
     utility::Validate,

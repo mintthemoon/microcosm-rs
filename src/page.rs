@@ -1,5 +1,5 @@
 use crate::{
-    schema::cw_serde,
+    cosmwasm_schema::cw_serde,
     std::Uint128,
     error::{Res, Error},
 };

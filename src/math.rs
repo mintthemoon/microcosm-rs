@@ -1,6 +1,6 @@
 use crate::{
     error::{Res, ToRes},
-    schema::cw_serde,
+    cosmwasm_schema::cw_serde,
     std::Deps,
     utility::Validate,
 };
