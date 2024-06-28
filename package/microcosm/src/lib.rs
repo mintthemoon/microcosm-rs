@@ -6,6 +6,8 @@ pub mod page;
 pub mod msg;
 
 pub mod schema {
+    use std::collections::BTreeMap;
+    use schemars::{JsonSchema, schema::RootSchema};
     pub use macrocosm::{cw_serde, QueryResponses};
     pub use cosmwasm_schema::{
         generate_api,
@@ -18,7 +20,16 @@ pub mod schema {
         IntegrityError,
         schema_for,
     };
+    
+    pub trait QueryResponses: JsonSchema {
+        fn response_schemas() -> Result<BTreeMap<String, RootSchema>, IntegrityError> {
+            let response_schemas = Self::response_schemas_impl();
+            Ok(response_schemas)
+        }
+        fn response_schemas_impl() -> BTreeMap<String, RootSchema>;
+    }
 }
+
 pub use cosmwasm_std as std;
 pub use cw_storage_plus;
 pub use anyhow;
