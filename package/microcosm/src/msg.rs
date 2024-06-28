@@ -1,5 +1,5 @@
 use crate::{
-    cosmwasm_schema::cw_serde,
+    schema::cw_serde,
     std::Uint128,
     page::{PageMsg, PageQuery},
 };

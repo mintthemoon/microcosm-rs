@@ -1,4 +1,4 @@
-use cosmwasm_std::StdError;
+use crate::std::StdError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
