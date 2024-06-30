@@ -5,7 +5,6 @@ use proc_macro::TokenStream;
 mod serde;
 mod query_responses;
 mod errors;
-mod utility;
 
 #[proc_macro_attribute]
 pub fn cw_serde(

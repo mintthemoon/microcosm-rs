@@ -6,13 +6,11 @@ use syn::{
 mod context {
     use super::*;
     use std::collections::HashSet;
-    use syn::{Ident, LitStr, Path};
+    use syn::Ident;
 
     const ATTR_PATH: &str = "query_responses";
 
     pub struct Context {
-        /// Name of the crate referenced in the macro expansions
-        pub crate_name: Path,
         /// If the enum we're trying to derive QueryResponses for collects other QueryMsgs,
         /// setting this flag will derive the implementation appropriately, collecting all
         /// KV pairs from the nested enums rather than expecting `#[return]` annotations.
@@ -23,7 +21,6 @@ mod context {
 
     pub fn get_context(input: &ItemEnum) -> Result<Context> {
         let mut ctx = Context {
-            crate_name: parse_quote!(::microcosm::schema),
             is_nested: false,
             no_bounds_for: HashSet::new(),
         };
@@ -43,9 +40,6 @@ mod context {
                     })?;
                 } else if param.path.is_ident("nested") {
                     ctx.is_nested = true;
-                } else if param.path.is_ident("crate") {
-                    let crate_name_str: LitStr = param.value()?.parse()?;
-                    ctx.crate_name = crate_name_str.parse()?;
                 } else {
                     Error::new_spanned(param.path, "unrecognized QueryResponses param");
                 }
@@ -74,7 +68,6 @@ mod context {
             };
             let context = get_context(&input).unwrap();
 
-            assert_eq!(context.crate_name, parse_quote!(::my_crate::cw_schema));
             assert!(context.is_nested);
             assert_eq!(
                 context.no_bounds_for,
@@ -89,7 +82,6 @@ use context::Context;
 pub fn query_responses_derive_impl(input: ItemEnum) -> Result<ItemImpl> {
     let ctx = context::get_context(&input)?;
     let item_impl = if ctx.is_nested {
-        let crate_name = &ctx.crate_name;
         let ident = input.ident;
         let subquery_calls = input
             .variants
@@ -101,23 +93,22 @@ pub fn query_responses_derive_impl(input: ItemEnum) -> Result<ItemImpl> {
         let impl_generics = impl_generics(
             &ctx,
             &input.generics,
-            &[parse_quote! {#crate_name::QueryResponses}],
+            &[parse_quote! {::microcosm::schema::QueryResponses}],
         );
         let subquery_len = subquery_calls.len();
         parse_quote! {
             #[automatically_derived]
             #[cfg(not(target_arch = "wasm32"))]
-            impl #impl_generics #crate_name::QueryResponses for #ident #type_generics #where_clause {
-                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, #crate_name::schemars::schema::RootSchema> {
+            impl #impl_generics ::microcosm::schema::QueryResponses for #ident #type_generics #where_clause {
+                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
                     let subqueries = [
                         #( #subquery_calls, )*
                     ];
-                    #crate_name::combine_subqueries::<#subquery_len, #ident #type_generics>(subqueries)
+                    ::microcosm::schema::combine_subqueries::<#subquery_len, #ident #type_generics>(subqueries)
                 }
             }
         }
     } else {
-        let crate_name = &ctx.crate_name;
         let ident = input.ident;
         let mappings = input
             .variants
@@ -136,8 +127,8 @@ pub fn query_responses_derive_impl(input: ItemEnum) -> Result<ItemImpl> {
         parse_quote! {
             #[automatically_derived]
             #[cfg(not(target_arch = "wasm32"))]
-            impl #impl_generics #crate_name::QueryResponses for #ident #type_generics #where_clause {
-                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, #crate_name::schemars::schema::RootSchema> {
+            impl #impl_generics ::microcosm::schema::QueryResponses for #ident #type_generics #where_clause {
+                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
                     ::std::collections::BTreeMap::from([
                         #( #mappings, )*
                     ])
@@ -158,11 +149,9 @@ fn impl_generics(ctx: &Context, generics: &Generics, bounds: &[TypeParamBound]) 
         param.default = None;
 
         if !ctx.no_bounds_for.contains(&param.ident) {
-            let crate_name = &ctx.crate_name;
-
             param
                 .bounds
-                .push(parse_quote! {#crate_name::schemars::JsonSchema});
+                .push(parse_quote! {::microcosm::schemars::JsonSchema});
 
             param.bounds.extend(bounds.to_owned());
         }
@@ -172,8 +161,7 @@ fn impl_generics(ctx: &Context, generics: &Generics, bounds: &[TypeParamBound]) 
 }
 
 /// Extract the query -> response mapping out of an enum variant.
-fn parse_query(ctx: &Context, v: Variant) -> Result<(String, Expr)> {
-    let crate_name = &ctx.crate_name;
+fn parse_query(_ctx: &Context, v: Variant) -> Result<(String, Expr)> {
     let query = to_snake_case(&v.ident.to_string());
     let response_ty: Type = v
         .attrs
@@ -183,12 +171,11 @@ fn parse_query(ctx: &Context, v: Variant) -> Result<(String, Expr)> {
         .parse_args()
         .map_err(|e| Error::new(e.span(), "return must be a type"))?;
 
-    Ok((query, parse_quote!(#crate_name::schema_for!(#response_ty))))
+    Ok((query, parse_quote!(::microcosm::schema::schema_for!(#response_ty))))
 }
 
 /// Extract the nested query  -> response mapping out of an enum variant.
-fn parse_subquery(ctx: &Context, v: Variant) -> Result<Expr> {
-    let crate_name = &ctx.crate_name;
+fn parse_subquery(_ctx: &Context, v: Variant) -> Result<Expr> {
     let submsg = match v.fields {
         syn::Fields::Named(_) => {
             return Err(Error::new_spanned(
@@ -213,7 +200,7 @@ fn parse_subquery(ctx: &Context, v: Variant) -> Result<Expr> {
         }
     };
 
-    Ok(parse_quote!(<#submsg as #crate_name::QueryResponses>::response_schemas_impl()))
+    Ok(parse_quote!(<#submsg as ::microcosm::schema::QueryResponses>::response_schemas_impl()))
 }
 
 fn parse_tuple((q, r): (String, Expr)) -> ExprTuple {
@@ -244,7 +231,6 @@ mod tests {
 
     fn test_context() -> Context {
         Context {
-            crate_name: parse_quote!(::cosmwasm_schema),
             is_nested: false,
             no_bounds_for: HashSet::new(),
         }
