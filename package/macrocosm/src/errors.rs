@@ -59,6 +59,13 @@ pub fn cw_error(input: DeriveInput) -> TokenStream {
             .iter()
             .map(|v| (v.ident.to_string(), v.clone()))
             .collect();
+        if variants_map.len() != 0 {
+            // allow cw_errors to convert from the base LibraryError
+            variants_map.insert("Microcosm".to_string(), parse_quote! {
+                #[error(transparent)]
+                Microcosm(#[from] ::microcosm::LibraryError)
+            });
+        }
         for v in variants() {
             let name = v.ident.to_string();
             if !variants_map.contains_key(&name) {

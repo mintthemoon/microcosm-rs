@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "microcosm"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "cosmwasm-schema 1.5.5",
