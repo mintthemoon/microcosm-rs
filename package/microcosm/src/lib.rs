@@ -3,7 +3,7 @@ pub mod utility;
 pub mod math;
 pub mod page;
 pub mod msg;
-mod error;
+pub mod error;
 
 pub use crate::error::Error as LibraryError;
 
