@@ -1,6 +1,6 @@
 [package]
 name = "microcosm"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["mintthemoon <mint@mintthemoon.xyz>"]
 edition = "2021"
 include = ["./package/microcosm/src"]
@@ -42,7 +42,7 @@ cosmwasm-std = { version = "1.5.2", features = [
   # "cosmwasm_1_4",
 ] }
 cw-storage-plus = "1.2.0"
-macrocosm = { version = "0.1.0", path = "package/macrocosm" }
+macrocosm = { version = "0.1.1", path = "package/macrocosm" }
 schemars = { version = "0.8.21", default-features = false }
 serde = { version = "1.0.197", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.58" }

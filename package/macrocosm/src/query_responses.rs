@@ -1,15 +1,18 @@
 use syn::{
-    parse_quote, Expr, ExprTuple, Generics, ItemEnum, ItemImpl, Type, TypeParamBound, Variant
+    parse_quote, Error, Expr, ExprTuple, Generics, ItemEnum, ItemImpl, Result, Type,
+    TypeParamBound, Variant,
 };
-use context::Context;
 
-pub mod context {
+mod context {
+    use super::*;
     use std::collections::HashSet;
-    use syn::{ItemEnum, Meta, NestedMeta, Ident};
+    use syn::{Ident, LitStr, Path};
 
     const ATTR_PATH: &str = "query_responses";
 
     pub struct Context {
+        /// Name of the crate referenced in the macro expansions
+        pub crate_name: Path,
         /// If the enum we're trying to derive QueryResponses for collects other QueryMsgs,
         /// setting this flag will derive the implementation appropriately, collecting all
         /// KV pairs from the nested enums rather than expecting `#[return]` annotations.
@@ -17,91 +20,114 @@ pub mod context {
         /// Disable infering the `JsonSchema` trait bound for chosen type parameters.
         pub no_bounds_for: HashSet<Ident>,
     }
-    
-    pub fn get_context(input: &ItemEnum) -> Context {
-        let params = input
-            .attrs
-            .iter()
-            .filter(|attr| matches!(attr.path.get_ident(), Some(id) if *id == ATTR_PATH))
-            .flat_map(|attr| {
-                if let Meta::List(l) = attr.parse_meta().unwrap() {
-                    l.nested
-                } else {
-                    panic!("{ATTR_PATH} attribute must contain a meta list");
-                }
-            })
-            .map(|nested_meta| {
-                if let NestedMeta::Meta(m) = nested_meta {
-                    m
-                } else {
-                    panic!("no literals allowed in QueryResponses params")
-                }
-            });
-    
+
+    pub fn get_context(input: &ItemEnum) -> Result<Context> {
         let mut ctx = Context {
+            crate_name: parse_quote!(::microcosm::schema),
             is_nested: false,
             no_bounds_for: HashSet::new(),
         };
-    
-        for param in params {
-            match param.path().get_ident().unwrap().to_string().as_str() {
-                "no_bounds_for" => {
-                    if let Meta::List(l) = param {
-                        for item in l.nested {
-                            match item {
-                                NestedMeta::Meta(Meta::Path(p)) => {
-                                    ctx.no_bounds_for.insert(p.get_ident().unwrap().clone());
-                                }
-                                _ => panic!("`no_bounds_for` only accepts a list of type params"),
-                            }
-                        }
-                    } else {
-                        panic!("expected a list for `no_bounds_for`")
-                    }
-                }
-                "nested" => ctx.is_nested = true,
-                path => panic!("unrecognized QueryResponses param: {path}"),
+
+        for attr in &input.attrs {
+            if !attr.path().is_ident(ATTR_PATH) {
+                continue;
             }
+            let meta_list = attr.meta.require_list()?;
+            meta_list.parse_nested_meta(|param| {
+                if param.path.is_ident("no_bounds_for") {
+                    param.parse_nested_meta(|item| {
+                        ctx.no_bounds_for
+                            .insert(item.path.get_ident().unwrap().clone());
+
+                        Ok(())
+                    })?;
+                } else if param.path.is_ident("nested") {
+                    ctx.is_nested = true;
+                } else if param.path.is_ident("crate") {
+                    let crate_name_str: LitStr = param.value()?.parse()?;
+                    ctx.crate_name = crate_name_str.parse()?;
+                } else {
+                    Error::new_spanned(param.path, "unrecognized QueryResponses param");
+                }
+                Ok(())
+            })?;
         }
-    
-        ctx
-    }    
+        Ok(ctx)
+    }
+
+    #[cfg(test)]
+    mod test {
+        use std::collections::HashSet;
+
+        use quote::format_ident;
+        use syn::parse_quote;
+
+        use super::get_context;
+
+        #[test]
+        fn parse_context() {
+            let input = parse_quote! {
+                #[query_responses(crate = "::my_crate::cw_schema")]
+                #[query_responses(nested)]
+                #[query_responses(no_bounds_for(Item1, Item2))]
+                enum Test {}
+            };
+            let context = get_context(&input).unwrap();
+
+            assert_eq!(context.crate_name, parse_quote!(::my_crate::cw_schema));
+            assert!(context.is_nested);
+            assert_eq!(
+                context.no_bounds_for,
+                HashSet::from([format_ident!("Item1"), format_ident!("Item2")])
+            );
+        }
+    }
 }
 
-pub fn query_responses_derive_impl(input: ItemEnum) -> ItemImpl {
-    let ctx = context::get_context(&input);
+use context::Context;
 
-    if ctx.is_nested {
+pub fn query_responses_derive_impl(input: ItemEnum) -> Result<ItemImpl> {
+    let ctx = context::get_context(&input)?;
+    let item_impl = if ctx.is_nested {
+        let crate_name = &ctx.crate_name;
         let ident = input.ident;
-        let subquery_calls = input.variants.into_iter().map(parse_subquery);
-
+        let subquery_calls = input
+            .variants
+            .into_iter()
+            .map(|variant| parse_subquery(&ctx, variant))
+            .collect::<Result<Vec<_>>>()?;
         // Handle generics if the type has any
         let (_, type_generics, where_clause) = input.generics.split_for_impl();
         let impl_generics = impl_generics(
             &ctx,
             &input.generics,
-            &[parse_quote! {::microcosm::schema::QueryResponses}],
+            &[parse_quote! {#crate_name::QueryResponses}],
         );
-
         let subquery_len = subquery_calls.len();
         parse_quote! {
             #[automatically_derived]
             #[cfg(not(target_arch = "wasm32"))]
-            impl #impl_generics ::microcosm::schema::QueryResponses for #ident #type_generics #where_clause {
-                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+            impl #impl_generics #crate_name::QueryResponses for #ident #type_generics #where_clause {
+                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, #crate_name::schemars::schema::RootSchema> {
                     let subqueries = [
                         #( #subquery_calls, )*
                     ];
-                    ::microcosm::schema::combine_subqueries::<#subquery_len, #ident #type_generics>(subqueries)
+                    #crate_name::combine_subqueries::<#subquery_len, #ident #type_generics>(subqueries)
                 }
             }
         }
     } else {
+        let crate_name = &ctx.crate_name;
         let ident = input.ident;
-        let mappings = input.variants.into_iter().map(parse_query);
-        let mut queries: Vec<_> = mappings.clone().map(|(q, _)| q).collect();
+        let mappings = input
+            .variants
+            .into_iter()
+            .map(|variant| parse_query(&ctx, variant))
+            .collect::<syn::Result<Vec<_>>>()?;
+
+        let mut queries: Vec<_> = mappings.clone().into_iter().map(|(q, _)| q).collect();
         queries.sort();
-        let mappings = mappings.map(parse_tuple);
+        let mappings = mappings.into_iter().map(parse_tuple);
 
         // Handle generics if the type has any
         let (_, type_generics, where_clause) = input.generics.split_for_impl();
@@ -110,15 +136,16 @@ pub fn query_responses_derive_impl(input: ItemEnum) -> ItemImpl {
         parse_quote! {
             #[automatically_derived]
             #[cfg(not(target_arch = "wasm32"))]
-            impl #impl_generics ::microcosm::schema::QueryResponses for #ident #type_generics #where_clause {
-                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+            impl #impl_generics #crate_name::QueryResponses for #ident #type_generics #where_clause {
+                fn response_schemas_impl() -> ::std::collections::BTreeMap<String, #crate_name::schemars::schema::RootSchema> {
                     ::std::collections::BTreeMap::from([
                         #( #mappings, )*
                     ])
                 }
             }
         }
-    }
+    };
+    Ok(item_impl)
 }
 
 /// Takes a list of generics from the type definition and produces a list of generics
@@ -131,9 +158,12 @@ fn impl_generics(ctx: &Context, generics: &Generics, bounds: &[TypeParamBound]) 
         param.default = None;
 
         if !ctx.no_bounds_for.contains(&param.ident) {
+            let crate_name = &ctx.crate_name;
+
             param
                 .bounds
-                .push(parse_quote! {::microcosm::schemars::JsonSchema});
+                .push(parse_quote! {#crate_name::schemars::JsonSchema});
+
             param.bounds.extend(bounds.to_owned());
         }
     }
@@ -142,36 +172,48 @@ fn impl_generics(ctx: &Context, generics: &Generics, bounds: &[TypeParamBound]) 
 }
 
 /// Extract the query -> response mapping out of an enum variant.
-fn parse_query(v: Variant) -> (String, Expr) {
+fn parse_query(ctx: &Context, v: Variant) -> Result<(String, Expr)> {
+    let crate_name = &ctx.crate_name;
     let query = to_snake_case(&v.ident.to_string());
     let response_ty: Type = v
         .attrs
         .iter()
-        .find(|a| a.path.get_ident().unwrap() == "returns")
-        .unwrap_or_else(|| panic!("missing return type for query: {}", v.ident))
+        .find(|a| a.path().is_ident("returns"))
+        .ok_or_else(|| Error::new_spanned(&v, "missing return type for query"))?
         .parse_args()
-        .unwrap_or_else(|_| panic!("return for {} must be a type", v.ident));
+        .map_err(|e| Error::new(e.span(), "return must be a type"))?;
 
-    (
-        query,
-        parse_quote!(::microcosm::schema::schema_for!(#response_ty)),
-    )
+    Ok((query, parse_quote!(#crate_name::schema_for!(#response_ty))))
 }
 
 /// Extract the nested query  -> response mapping out of an enum variant.
-fn parse_subquery(v: Variant) -> Expr {
+fn parse_subquery(ctx: &Context, v: Variant) -> Result<Expr> {
+    let crate_name = &ctx.crate_name;
     let submsg = match v.fields {
-        syn::Fields::Named(_) => panic!("a struct variant is not a valid subquery"),
+        syn::Fields::Named(_) => {
+            return Err(Error::new_spanned(
+                v,
+                "a struct variant is not a valid subquery",
+            ))
+        }
         syn::Fields::Unnamed(fields) => {
             if fields.unnamed.len() != 1 {
-                panic!("invalid number of subquery parameters");
+                return Err(Error::new_spanned(
+                    fields,
+                    "invalid number of subquery parameters",
+                ));
             }
-
             fields.unnamed[0].ty.clone()
         }
-        syn::Fields::Unit => panic!("a unit variant is not a valid subquery"),
+        syn::Fields::Unit => {
+            return Err(Error::new_spanned(
+                v,
+                "a unit variant is not a valid subquery",
+            ));
+        }
     };
-    parse_quote!(<#submsg as ::microcosm::schema::QueryResponses>::response_schemas_impl())
+
+    Ok(parse_quote!(<#submsg as #crate_name::QueryResponses>::response_schemas_impl()))
 }
 
 fn parse_tuple((q, r): (String, Expr)) -> ExprTuple {
@@ -194,9 +236,82 @@ fn to_snake_case(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use syn::parse_quote;
 
     use super::*;
+
+    fn test_context() -> Context {
+        Context {
+            crate_name: parse_quote!(::cosmwasm_schema),
+            is_nested: false,
+            no_bounds_for: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn crate_rename() {
+        let input: ItemEnum = parse_quote! {
+            #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses)]
+            #[serde(rename_all = "snake_case")]
+            #[query_responses(crate = "::my_crate::cw_schema")]
+            pub enum QueryMsg {
+                #[returns(some_crate::AnotherType)]
+                Supply {},
+                #[returns(SomeType)]
+                Balance {},
+            }
+        };
+
+        assert_eq!(
+            query_responses_derive_impl(input).unwrap(),
+            parse_quote! {
+                #[automatically_derived]
+                #[cfg(not(target_arch = "wasm32"))]
+                impl ::my_crate::cw_schema::QueryResponses for QueryMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::my_crate::cw_schema::schemars::schema::RootSchema> {
+                        ::std::collections::BTreeMap::from([
+                            ("supply".to_string(), ::my_crate::cw_schema::schema_for!(some_crate::AnotherType)),
+                            ("balance".to_string(), ::my_crate::cw_schema::schema_for!(SomeType)),
+                        ])
+                    }
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn crate_rename_nested() {
+        let input: ItemEnum = parse_quote! {
+            #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses)]
+            #[serde(untagged)]
+            #[query_responses(crate = "::my_crate::cw_schema", nested)]
+            pub enum ContractQueryMsg {
+                Cw1(QueryMsg1),
+                Whitelist(whitelist::QueryMsg),
+                Cw1WhitelistContract(QueryMsg),
+            }
+        };
+        let result = query_responses_derive_impl(input).unwrap();
+        assert_eq!(
+            result,
+            parse_quote! {
+                #[automatically_derived]
+                #[cfg(not(target_arch = "wasm32"))]
+                impl ::my_crate::cw_schema::QueryResponses for ContractQueryMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::my_crate::cw_schema::schemars::schema::RootSchema> {
+                        let subqueries = [
+                            <QueryMsg1 as ::my_crate::cw_schema::QueryResponses>::response_schemas_impl(),
+                            <whitelist::QueryMsg as ::my_crate::cw_schema::QueryResponses>::response_schemas_impl(),
+                            <QueryMsg as ::my_crate::cw_schema::QueryResponses>::response_schemas_impl(),
+                        ];
+                        ::my_crate::cw_schema::combine_subqueries::<3usize, ContractQueryMsg>(subqueries)
+                    }
+                }
+            }
+        );
+    }
 
     #[test]
     fn happy_path() {
@@ -212,15 +327,15 @@ mod tests {
         };
 
         assert_eq!(
-            query_responses_derive_impl(input),
+            query_responses_derive_impl(input).unwrap(),
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl ::microcosm::schema::QueryResponses for QueryMsg {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl ::cosmwasm_schema::QueryResponses for QueryMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         ::std::collections::BTreeMap::from([
-                            ("supply".to_string(), ::microcosm::schema::schema_for!(some_crate::AnotherType)),
-                            ("balance".to_string(), ::microcosm::schema::schema_for!(SomeType)),
+                            ("supply".to_string(), ::cosmwasm_schema::schema_for!(some_crate::AnotherType)),
+                            ("balance".to_string(), ::cosmwasm_schema::schema_for!(SomeType)),
                         ])
                     }
                 }
@@ -237,12 +352,12 @@ mod tests {
         };
 
         assert_eq!(
-            query_responses_derive_impl(input),
+            query_responses_derive_impl(input).unwrap(),
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl ::microcosm::schema::QueryResponses for QueryMsg {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl ::cosmwasm_schema::QueryResponses for QueryMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         ::std::collections::BTreeMap::from([])
                     }
                 }
@@ -287,51 +402,51 @@ mod tests {
             }
         };
 
-        let result = query_responses_derive_impl(input);
+        let result = query_responses_derive_impl(input).unwrap();
 
         assert_eq!(
             result,
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl<T: ::microcosm::schemars::JsonSchema> ::microcosm::schema::QueryResponses for QueryMsg<T> {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl<T: ::cosmwasm_schema::schemars::JsonSchema> ::cosmwasm_schema::QueryResponses for QueryMsg<T> {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         ::std::collections::BTreeMap::from([
-                            ("foo".to_string(), ::microcosm::schema::schema_for!(bool)),
-                            ("bar".to_string(), ::microcosm::schema::schema_for!(u32)),
+                            ("foo".to_string(), ::cosmwasm_schema::schema_for!(bool)),
+                            ("bar".to_string(), ::cosmwasm_schema::schema_for!(u32)),
                         ])
                     }
                 }
             }
         );
         assert_eq!(
-            query_responses_derive_impl(input2),
+            query_responses_derive_impl(input2).unwrap(),
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl<T: std::fmt::Debug + SomeTrait + ::microcosm::schemars::JsonSchema> ::microcosm::schema::QueryResponses for QueryMsg<T> {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl<T: std::fmt::Debug + SomeTrait + ::cosmwasm_schema::schemars::JsonSchema> ::cosmwasm_schema::QueryResponses for QueryMsg<T> {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         ::std::collections::BTreeMap::from([
-                            ("foo".to_string(), ::microcosm::schema::schema_for!(bool)),
-                            ("bar".to_string(), ::microcosm::schema::schema_for!(u32)),
+                            ("foo".to_string(), ::cosmwasm_schema::schema_for!(bool)),
+                            ("bar".to_string(), ::cosmwasm_schema::schema_for!(u32)),
                         ])
                     }
                 }
             }
         );
-        let a = query_responses_derive_impl(input3);
+        let a = query_responses_derive_impl(input3).unwrap();
         assert_eq!(
             a,
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl<T: ::microcosm::schemars::JsonSchema> ::microcosm::schema::QueryResponses for QueryMsg<T>
+                impl<T: ::cosmwasm_schema::schemars::JsonSchema> ::cosmwasm_schema::QueryResponses for QueryMsg<T>
                     where T: std::fmt::Debug + SomeTrait,
                 {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         ::std::collections::BTreeMap::from([
-                            ("foo".to_string(), ::microcosm::schema::schema_for!(bool)),
-                            ("bar".to_string(), ::microcosm::schema::schema_for!(u32)),
+                            ("foo".to_string(), ::cosmwasm_schema::schema_for!(bool)),
+                            ("bar".to_string(), ::cosmwasm_schema::schema_for!(u32)),
                         ])
                     }
                 }
@@ -340,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "missing return type for query: Supply")]
+    #[should_panic(expected = "missing return type for query")]
     fn missing_return() {
         let input: ItemEnum = parse_quote! {
             #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses)]
@@ -352,11 +467,11 @@ mod tests {
             }
         };
 
-        query_responses_derive_impl(input);
+        query_responses_derive_impl(input).unwrap();
     }
 
     #[test]
-    #[should_panic(expected = "return for Supply must be a type")]
+    #[should_panic(expected = "return must be a type")]
     fn invalid_return() {
         let input: ItemEnum = parse_quote! {
             #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, QueryResponses)]
@@ -369,7 +484,7 @@ mod tests {
             }
         };
 
-        query_responses_derive_impl(input);
+        query_responses_derive_impl(input).unwrap();
     }
 
     #[test]
@@ -380,9 +495,9 @@ mod tests {
         };
 
         assert_eq!(
-            parse_tuple(parse_query(variant)),
+            parse_tuple(parse_query(&test_context(), variant).unwrap()),
             parse_quote! {
-                ("get_foo".to_string(), ::microcosm::schema::schema_for!(Foo))
+                ("get_foo".to_string(), ::cosmwasm_schema::schema_for!(Foo))
             }
         );
 
@@ -392,8 +507,8 @@ mod tests {
         };
 
         assert_eq!(
-            parse_tuple(parse_query(variant)),
-            parse_quote! { ("get_foo".to_string(), ::microcosm::schema::schema_for!(some_crate::Foo)) }
+            parse_tuple(parse_query(&test_context(), variant).unwrap()),
+            parse_quote! { ("get_foo".to_string(), ::cosmwasm_schema::schema_for!(some_crate::Foo)) }
         );
     }
 
@@ -415,20 +530,20 @@ mod tests {
                 Cw1WhitelistContract(QueryMsg),
             }
         };
-        let result = query_responses_derive_impl(input);
+        let result = query_responses_derive_impl(input).unwrap();
         assert_eq!(
             result,
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl ::microcosm::schema::QueryResponses for ContractQueryMsg {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl ::cosmwasm_schema::QueryResponses for ContractQueryMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         let subqueries = [
-                            <QueryMsg1 as ::microcosm::schema::QueryResponses>::response_schemas_impl(),
-                            <whitelist::QueryMsg as ::microcosm::schema::QueryResponses>::response_schemas_impl(),
-                            <QueryMsg as ::microcosm::schema::QueryResponses>::response_schemas_impl(),
+                            <QueryMsg1 as ::cosmwasm_schema::QueryResponses>::response_schemas_impl(),
+                            <whitelist::QueryMsg as ::cosmwasm_schema::QueryResponses>::response_schemas_impl(),
+                            <QueryMsg as ::cosmwasm_schema::QueryResponses>::response_schemas_impl(),
                         ];
-                        ::microcosm::schema::combine_subqueries::<3usize, ContractQueryMsg>(subqueries)
+                        ::cosmwasm_schema::combine_subqueries::<3usize, ContractQueryMsg>(subqueries)
                     }
                 }
             }
@@ -443,16 +558,16 @@ mod tests {
             #[query_responses(nested)]
             pub enum EmptyMsg {}
         };
-        let result = query_responses_derive_impl(input);
+        let result = query_responses_derive_impl(input).unwrap();
         assert_eq!(
             result,
             parse_quote! {
                 #[automatically_derived]
                 #[cfg(not(target_arch = "wasm32"))]
-                impl ::microcosm::schema::QueryResponses for EmptyMsg {
-                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::microcosm::schemars::schema::RootSchema> {
+                impl ::cosmwasm_schema::QueryResponses for EmptyMsg {
+                    fn response_schemas_impl() -> ::std::collections::BTreeMap<String, ::cosmwasm_schema::schemars::schema::RootSchema> {
                         let subqueries = [];
-                        ::microcosm::schema::combine_subqueries::<0usize, EmptyMsg>(subqueries)
+                        ::cosmwasm_schema::combine_subqueries::<0usize, EmptyMsg>(subqueries)
                     }
                 }
             }
@@ -471,7 +586,7 @@ mod tests {
                 Whitelist(whitelist::QueryMsg),
             }
         };
-        query_responses_derive_impl(input);
+        query_responses_derive_impl(input).unwrap();
     }
 
     #[test]
@@ -488,7 +603,7 @@ mod tests {
                 }
             }
         };
-        query_responses_derive_impl(input);
+        query_responses_derive_impl(input).unwrap();
     }
 
     #[test]
@@ -503,6 +618,6 @@ mod tests {
                 Whitelist,
             }
         };
-        query_responses_derive_impl(input);
+        query_responses_derive_impl(input).unwrap();
     }
 }

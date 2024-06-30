@@ -1,7 +1,7 @@
 use crate::{
     schema::cw_serde,
-    std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response, StdError},
-    error::{Error, Res},
+    std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response},
+    error::{Error, Res, ToRes},
     utility::Validate,
 };
 
@@ -23,7 +23,7 @@ impl Claim {
             })
             .collect::<Vec<Coin>>()
             .try_into()
-            .map_err(|e| StdError::from(e).into())
+            .res()
     }
 }
 
@@ -36,7 +36,7 @@ impl Split {
     pub fn with_remainder_to(&self, addr: &Addr) -> Res<Self> {
         let total_bps: u32 = self.claims.iter().map(|c| c.bps).sum();
         if total_bps > 10000 {
-            return Err(Error::Generic("Total funds claims exceed 100%".to_string()));
+            return Err(Error::Generic("Total funds claims exceed 100%".to_string()).into());
         }
         let claim = Claim {
             owner: addr.clone(),
@@ -88,9 +88,9 @@ pub trait MessageFunds {
 impl MessageFunds for MessageInfo {
     fn require_coin(&self, expected: &Coin) -> Res {
         if self.funds.len() == 0 {
-            return Err(Error::InsufficientFunds {});
+            return Err(Error::InsufficientFunds);
         }
-        let funds: Coins = self.funds.clone().try_into()?;
+        let funds: Coins = self.funds.clone().try_into().res()?;
         if funds.amount_of(&expected.denom) < expected.amount {
             return Err(Error::InsufficientFunds {});
         }
@@ -101,7 +101,7 @@ impl MessageFunds for MessageInfo {
         if self.funds.len() < expected.len() {
             return Err(Error::InsufficientFunds {});
         }
-        let funds: Coins = self.funds.clone().try_into()?;
+        let funds: Coins = self.funds.clone().try_into().res()?;
         for coin in expected {
             if funds.amount_of(&coin.denom) < coin.amount {
                 return Err(Error::InsufficientFunds {});
@@ -112,7 +112,7 @@ impl MessageFunds for MessageInfo {
 
     fn defund(&self) -> Res {
         if self.funds.len() != 0 {
-            return Err(Error::FundsNotRequired {});
+            return Err(Error::FundsNotAccepted);
         }
         Ok(())
     }
@@ -124,7 +124,7 @@ pub trait AddSplitMessages {
 
 impl AddSplitMessages for Response {
     fn add_split_messages(self, funds: &[Coin], split: &Split) -> Res<Response> {
-        let coins: Coins = funds.try_into()?;
+        let coins: Coins = funds.try_into().res()?;
         let response = self.add_messages(split.split(&coins)?);
         Ok(response)
     }

@@ -7,7 +7,7 @@ pub trait Authorize {
 impl Authorize for Addr {
     fn authorize(&self, addr: &Addr) -> Res {
         if self != addr {
-            return Err(Error::Unauthorized {});
+            return Err(Error::Unauthorized);
         }
         Ok(())
     }
