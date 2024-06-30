@@ -3,7 +3,9 @@ pub mod utility;
 pub mod math;
 pub mod page;
 pub mod msg;
-pub mod error;
+mod error;
+
+pub use crate::error::Error as LibraryError;
 
 pub mod schema {
     use std::collections::BTreeMap;
