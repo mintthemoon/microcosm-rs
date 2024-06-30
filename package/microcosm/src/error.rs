@@ -4,23 +4,31 @@ pub use crate::std::StdError;
 #[cw_error]
 pub enum Error {}
 
-pub type Res<T = (), E = Error> = Result<T, E>;
-
-pub trait ToRes<T, E = Error> {
-    fn res(self) -> Res<T, E>;
+pub trait WrapErr<T> {
+    fn wrap_err(inner: T) -> Self;
 }
 
-impl <T, E: Into<anyhow::Error>> ToRes<T> for Result<T, E> {
-    fn res(self) -> Res<T> {
-        self.map_err(|e| Error::Generic(e.into().to_string()))
+pub trait FromStdError {
+    fn from_std<E: Into<StdError>>(err: E) -> Self;
+}
+
+pub type Res<T = (), E = Error> = Result<T, E>;
+
+pub trait WrapRes<T, E> {
+    fn wrap(self) -> Res<T, E>;
+}
+
+impl <T, I, E: WrapErr<I>> WrapRes<T, E> for Result<T, I> {
+    fn wrap(self) -> Res<T, E> {
+        self.map_err(E::wrap_err)
     }
 }
 
-pub trait FromRes<T> {
+pub trait StdRes<T> {
     fn std(self) -> Res<T, StdError>;
 }
 
-impl <T> FromRes<T> for Res<T> {
+impl <T, E: Into<StdError>> StdRes<T> for Res<T, E> {
     fn std(self) -> Res<T, StdError> {
         self.map_err(Into::into)
     }

@@ -1,7 +1,7 @@
 use crate::{
     schema::cw_serde,
     std::{Addr, BankMsg, Coin, Coins, Deps, MessageInfo, Response},
-    error::{Error, Res, ToRes},
+    error::{Error, Res, WrapRes},
     utility::Validate,
 };
 
@@ -23,7 +23,7 @@ impl Claim {
             })
             .collect::<Vec<Coin>>()
             .try_into()
-            .res()
+            .wrap()
     }
 }
 
@@ -90,7 +90,7 @@ impl MessageFunds for MessageInfo {
         if self.funds.len() == 0 {
             return Err(Error::InsufficientFunds);
         }
-        let funds: Coins = self.funds.clone().try_into().res()?;
+        let funds: Coins = self.funds.clone().try_into()?;
         if funds.amount_of(&expected.denom) < expected.amount {
             return Err(Error::InsufficientFunds {});
         }
@@ -101,7 +101,7 @@ impl MessageFunds for MessageInfo {
         if self.funds.len() < expected.len() {
             return Err(Error::InsufficientFunds {});
         }
-        let funds: Coins = self.funds.clone().try_into().res()?;
+        let funds: Coins = self.funds.clone().try_into()?;
         for coin in expected {
             if funds.amount_of(&coin.denom) < coin.amount {
                 return Err(Error::InsufficientFunds {});
@@ -124,7 +124,7 @@ pub trait AddSplitMessages {
 
 impl AddSplitMessages for Response {
     fn add_split_messages(self, funds: &[Coin], split: &Split) -> Res<Response> {
-        let coins: Coins = funds.try_into().res()?;
+        let coins: Coins = funds.try_into()?;
         let response = self.add_messages(split.split(&coins)?);
         Ok(response)
     }

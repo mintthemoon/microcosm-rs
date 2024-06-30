@@ -42,6 +42,10 @@ fn variants() -> Vec<Variant> {
             NotFound(&'static str)
         },
         parse_quote! {
+            #[error("Failed to parse value")]
+            Parse
+        },
+        parse_quote! {
             #[error("Unexpected error")]
             Unexpected
         },
@@ -79,6 +83,18 @@ pub fn cw_error(input: DeriveInput) -> TokenStream {
                         #ident::Std(e) => e,
                         _ => ::microcosm::std::StdError::GenericErr { msg: self.to_string() },
                     }
+                }
+            }
+            
+            impl From<::microcosm::std::CoinsError> for #ident {
+                fn from(e: ::microcosm::std::CoinsError) -> Self {
+                    #ident::Std(e.into())
+                }
+            }
+
+            impl <T: ToString> WrapErr<T> for #ident {
+                fn wrap_err(inner: T) -> Self {
+                    #ident::Generic(inner.to_string())
                 }
             }
         }

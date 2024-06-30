@@ -1,5 +1,5 @@
 use crate::{
-    error::{Res, ToRes},
+    error::{Res, WrapErr, Error},
     schema::cw_serde,
     std::Deps,
     utility::Validate,
@@ -21,13 +21,13 @@ pub enum RangeMsg {
 impl<T> Validate<Range<T>> for RangeMsg
 where
     T: Serialize + FromStr,
-    <T as FromStr>::Err: Into<anyhow::Error>,
+    <T as FromStr>::Err: ToString,
 {
     fn validate(&self, _deps: Deps) -> Res<Range<T>> {
         Ok(match self {
             RangeMsg::Inclusive { low, high } => Range::Inclusive {
-                high: high.parse().res()?,
-                low: low.parse().res()?,
+                high: high.parse().map_err(Error::wrap_err)?,
+                low: low.parse().map_err(Error::wrap_err)?,
             },
         })
     }
