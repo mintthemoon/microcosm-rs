@@ -92,7 +92,7 @@ pub fn cw_error(input: DeriveInput) -> TokenStream {
                 }
             }
 
-            impl <T: ToString> WrapErr<T> for #ident {
+            impl <T: ToString> ::microcosm::error::WrapErr<T> for #ident {
                 fn wrap_err(inner: T) -> Self {
                     #ident::Generic(inner.to_string())
                 }
