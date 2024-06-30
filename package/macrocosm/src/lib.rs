@@ -1,10 +1,12 @@
-use syn::{parse_macro_input, DeriveInput, parse};
-use quote::ToTokens;
-use proc_macro::TokenStream;
-
 mod serde;
 mod query_responses;
 mod errors;
+mod utility;
+
+use syn::{parse_macro_input, DeriveInput, parse};
+use quote::ToTokens;
+use proc_macro::TokenStream;
+use crate::utility::MacroArgs;
 
 #[proc_macro_attribute]
 pub fn cw_serde(
@@ -30,7 +32,8 @@ pub fn query_responses_derive(
 }
 
 #[proc_macro_attribute]
-pub fn cw_error(_attr: TokenStream, input: TokenStream) -> TokenStream {
+pub fn cw_error(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as MacroArgs);
     let derive_input = parse_macro_input!(input as DeriveInput);
-    errors::cw_error(derive_input).into()
+    errors::cw_error(args.vars, derive_input).into()
 }

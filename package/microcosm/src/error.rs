@@ -1,7 +1,7 @@
 pub use macrocosm::cw_error;
 pub use crate::std::StdError;
 
-#[cw_error]
+#[cw_error(base)]
 pub enum Error {}
 
 pub type Res<T = (), E = Error> = Result<T, E>;

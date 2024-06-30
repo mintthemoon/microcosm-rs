@@ -52,14 +52,14 @@ fn variants() -> Vec<Variant> {
     ]
 }
 
-pub fn cw_error(input: DeriveInput) -> TokenStream {
+pub fn cw_error(args: Vec<String>, input: DeriveInput) -> TokenStream {
     if let Data::Enum(ref data) = input.data {
         let mut variants_map: BTreeMap<String, Variant> = data
             .variants
             .iter()
             .map(|v| (v.ident.to_string(), v.clone()))
             .collect();
-        if variants_map.len() != 0 {
+        if !args.contains(&"base".to_string()) {
             // allow cw_errors to convert from the base LibraryError
             variants_map.insert("Microcosm".to_string(), parse_quote! {
                 #[error(transparent)]
