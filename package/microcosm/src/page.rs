@@ -1,8 +1,10 @@
 use crate::{
+    error::{Error, Res, WrapErr},
+    math::Range,
     schema::cw_serde,
     std::Uint128,
-    error::{Res, Error},
 };
+use std::cmp::min;
 
 #[cw_serde]
 pub struct PageMsg {
@@ -22,19 +24,35 @@ pub struct PageLimits {
 }
 
 impl PageLimits {
-    pub fn start_index(&self, page: PageQuery) -> Res<Uint128> {
-        let limit = page.limit.unwrap_or(self.default);
-        if limit > self.max {
+    pub fn page_info(
+        &self,
+        query: Option<PageQuery>,
+        max_items: Uint128,
+    ) -> Res<(PageMsg, Range<Uint128>)> {
+        let (index, limit) = match query {
+            Some(q) => (q.index, q.limit.unwrap_or(self.default)),
+            None => (Uint128::zero(), self.default),
+        };
+        if limit == 0 || limit > self.max {
             return Err(Error::Input {});
         }
-        Ok(page.index * Uint128::new(limit as u128))
-    }
-
-    pub fn end_index(&self, page: PageQuery) -> Res<Uint128> {
-        let limit = page.limit.unwrap_or(self.default);
-        if limit > self.max {
+        let start = index
+            .checked_mul(Uint128::new(limit as u128))
+            .map_err(Error::wrap_err)?;
+        if start > max_items {
             return Err(Error::Input {});
         }
-        Ok(page.index * Uint128::new((limit + 1) as u128))
+        let end = min(
+            start
+                .checked_add(Uint128::new(limit as u128))
+                .map_err(Error::wrap_err)?,
+            max_items,
+        );
+        let page = PageMsg { index, end };
+        let range = Range::Inclusive {
+            low: start,
+            high: end,
+        };
+        Ok((page, range))
     }
 }
