@@ -25,8 +25,8 @@ impl Default for MetadataMsg {
 
 #[cw_serde]
 pub struct MetaMsg<T> {
-    meta: MetadataMsg,
-    data: T,
+    pub meta: MetadataMsg,
+    pub data: T,
 }
 
 impl <T> MetaMsg<T> {

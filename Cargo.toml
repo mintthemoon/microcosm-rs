@@ -1,6 +1,6 @@
 [package]
 name = "microcosm"
-version = "0.2.13"
+version = "0.2.14"
 authors = ["mintthemoon <mint@mintthemoon.xyz>"]
 edition = "2021"
 include = ["./package/microcosm/src"]
