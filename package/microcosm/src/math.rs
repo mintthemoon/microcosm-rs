@@ -3,43 +3,55 @@ use crate::{
     schema::cw_serde,
     std::Deps,
     utility::Validate,
+    cw_storage_plus::{Bound, PrimaryKey},
 };
 use serde::Serialize;
 use std::str::FromStr;
 
 #[cw_serde]
-pub enum Range<T: Serialize + FromStr> {
-    Inclusive { low: T, high: T },
+pub struct Range<T: Serialize + FromStr + Clone> {
+    pub low: T,
+    pub high: T,
+}
+
+impl <T: Serialize + FromStr + Clone> Range<T> {
+    pub fn new(low: T, high: T) -> Self {
+        Range { low, high }
+    }
+
+    pub fn bounds<'a, U: PrimaryKey<'a> + From<T>>(&self) -> Res<(Bound<'a, U>, Bound<'a, U>)> {
+        Ok((
+            Bound::inclusive(U::from(self.low.clone())),
+            Bound::exclusive(U::from(self.high.clone())),
+        ))
+    }
 }
 
 // ======= MESSAGES =======
 #[cw_serde]
-pub enum RangeMsg {
-    Inclusive { low: String, high: String },
+pub struct RangeMsg {
+    low: String,
+    high: String,
 }
 
 impl<T> Validate<Range<T>> for RangeMsg
 where
-    T: Serialize + FromStr,
+    T: Serialize + FromStr + Clone,
     <T as FromStr>::Err: ToString,
 {
     fn validate(&self, _deps: Deps) -> Res<Range<T>> {
-        Ok(match self {
-            RangeMsg::Inclusive { low, high } => Range::Inclusive {
-                high: high.parse().map_err(Error::wrap_err)?,
-                low: low.parse().map_err(Error::wrap_err)?,
-            },
-        })
+        Ok(Range::new(
+            self.low.parse().map_err(Error::wrap_err)?,
+            self.high.parse().map_err(Error::wrap_err)?,
+        ))
     }
 }
 
-impl<T: Serialize + FromStr + ToString> From<Range<T>> for RangeMsg {
+impl<T: Serialize + FromStr + Clone + ToString> From<Range<T>> for RangeMsg {
     fn from(range: Range<T>) -> RangeMsg {
-        match range {
-            Range::Inclusive { low, high } => RangeMsg::Inclusive {
-                low: low.to_string(),
-                high: high.to_string(),
-            },
+        RangeMsg {
+            low: range.low.to_string(),
+            high: range.high.to_string(),
         }
     }
 }

@@ -49,10 +49,7 @@ impl PageLimits {
             max_items,
         );
         let page = PageMsg { index, end };
-        let range = Range::Inclusive {
-            low: start,
-            high: end,
-        };
+        let range = Range { low: start, high: end };
         Ok((page, range))
     }
 }
